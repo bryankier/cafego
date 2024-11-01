@@ -5,3 +5,11 @@
 <h2>{{ .Name }}</h2>
 <p>Price: PHP {{ .Price }}</p>
 <p>{{ .Description }}</p>
+
+<h2>Add to cart</h2>
+<form action="" method="post">
+    <input type="hidden" name="product_id" value="{{ .Id }}">
+    <label for="quantity">Quantity</label>
+    <input type="number" name="quantity">
+    <input type="submit" value="Add to cart">
+</form>

@@ -5,11 +5,58 @@ package main
 import (
 	"database/sql"
 	"log"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
+type Product struct {
+	Id          int
+	Name        string
+	Price       int
+	Description string
+}
+
+type User struct {
+	Id       int
+	Username string
+	Password string
+}
+
+type Session struct {
+	Token  string
+	UserId int
+}
+type CartItem struct {
+	Id          int
+	UserId      int
+	ProductId   int
+	Quantity    int
+	ProductName string
+}
+
 var database *sql.DB
+
+var sessions = []Session{}
+
+var seedUsers = []User{
+	{
+		Id:       1,
+		Username: "zagreus",
+		Password: "cerberus",
+	},
+	{
+		Id:       2,
+		Username: "melinoe",
+		Password: "b4d3ec1",
+	},
+}
+var seedProducts = []Product{
+	{Id: 1, Name: "Americano", Price: 100, Description: "Espresso, diluted for a lighter experience"},
+	{Id: 2, Name: "Cappuccino", Price: 110, Description: "Espresso with steamed milk"},
+	{Id: 3, Name: "Espresso", Price: 90, Description: "A strong shot of coffee"},
+	{Id: 4, Name: "Macchiato", Price: 120, Description: "Espresso with a small amount of milk"},
+}
 
 func initDB() {
 	db, err := sql.Open("sqlite3", "./db")
@@ -26,7 +73,10 @@ func initDB() {
 		"CREATE TABLE IF NOT EXISTS cgo_product (name TEXT, price INTEGER, description TEXT)",
 		"CREATE TABLE IF NOT EXISTS cgo_session (token TEXT, user_id INTEGER)",
 		"CREATE TABLE IF NOT EXISTS cgo_cart_item (product_id INTEGER, quantity INTEGER, user_id INTEGER)",
+		"CREATE TABLE IF NOT EXISTS cgo_transaction (user_id INTEGER, created_at TEXT)",
+		"CREATE TABLE IF NOT EXISTS cgo_line_item (transaction_id INTEGER, product_id INTEGER, quantity INTEGER)",
 	}
+
 	for _, q := range queries {
 		_, err := db.Exec(q)
 		if err != nil {
@@ -66,45 +116,6 @@ func initDB() {
 			}
 		}
 	}
-}
-
-type Product struct {
-	Id          int
-	Name        string
-	Price       int
-	Description string
-}
-
-type User struct {
-	Id       int
-	Username string
-	Password string
-}
-
-type Session struct {
-	Token  string
-	UserId int
-}
-
-var sessions = []Session{}
-
-var seedUsers = []User{
-	{
-		Id:       1,
-		Username: "zagreus",
-		Password: "cerberus",
-	},
-	{
-		Id:       2,
-		Username: "melinoe",
-		Password: "b4d3ec1",
-	},
-}
-var seedProducts = []Product{
-	{Id: 1, Name: "Americano", Price: 100, Description: "Espresso, diluted for a lighter experience"},
-	{Id: 2, Name: "Cappuccino", Price: 110, Description: "Espresso with steamed milk"},
-	{Id: 3, Name: "Espresso", Price: 90, Description: "A strong shot of coffee"},
-	{Id: 4, Name: "Macchiato", Price: 120, Description: "Espresso with a small amount of milk"},
 }
 
 func getProducts() []Product {
@@ -183,5 +194,66 @@ func createCartItem(userId int, productId int, quantity int) {
 	_, err := database.Exec(q, userId, productId, quantity)
 	if err != nil {
 		log.Fatal(err)
+	}
+}
+
+func getCartItemsByUser(user User) []CartItem {
+	userId := user.Id
+	q := `
+	SELECT
+		cgo_cart_item.rowid,
+		cgo_cart_item.user_id,
+		cgo_cart_item.product_id,
+		cgo_cart_item.quantity,
+		cgo_product.name
+	FROM cgo_cart_item
+	LEFT JOIN cgo_product ON cgo_cart_item.product_id = cgo_product.rowid
+	WHERE cgo_cart_item.user_id = ?
+	`
+	rows, err := database.Query(q, userId)
+	if err == sql.ErrNoRows {
+		return []CartItem{}
+	} else if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	var result []CartItem
+	for rows.Next() {
+		var cartItem CartItem
+		rows.Scan(&cartItem.Id, &cartItem.UserId, &cartItem.ProductId, &cartItem.Quantity, &cartItem.ProductName)
+		result = append(result, cartItem)
+	}
+	return result
+}
+
+func checkoutItemsForUser(user User) {
+	// Fetch cart items first
+	// We want to transform each of these into a line item
+	cartItems := getCartItemsByUser(user)
+	// Create a new transaction
+	now := time.Now().UTC()
+	q := "INSERT INTO cgo_transaction (user_id, created_at) VALUES (?, ?)"
+	// We need the first return value for once for the ID of the new transaction
+	res, err := database.Exec(q, user.Id, now)
+	if err != nil {
+		log.Fatal(err)
+	}
+	lastInsertId, err := res.LastInsertId()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Transform each cart item into a line item
+	for _, ci := range cartItems {
+		var q string
+		q = "INSERT INTO cgo_line_item (transaction_id, product_id, quantity) VALUES (?, ?, ?)"
+		_, err = database.Exec(q, lastInsertId, ci.ProductId, ci.Quantity)
+		if err != nil {
+			log.Fatal(err)
+		}
+		q = "DELETE FROM cgo_cart_item WHERE rowid = ?"
+		_, err = database.Exec(q, ci.Id)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }

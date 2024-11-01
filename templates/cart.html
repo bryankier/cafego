@@ -1,7 +1,17 @@
-<h2>Add to cart</h2>
+<h1>CafeGo</h1>
+
+<p>Welcome, {{ .User.Username }}!</p>
+
+<a href="/">Back to home page</a>
+
+<h2>My Cart</h2>
+
+<ul>
+    {{ range $ci := .CartItems }}
+        <li>{{ $ci.Quantity }} - {{ $ci.ProductName }}</li>
+    {{ end }}
+</ul>
+
 <form action="" method="post">
-    <input type="hidden" name="product_id" value="{{ .Id }}">
-    <label for="quantity">Quantity</label>
-    <input type="number" name="quantity">
-    <input type="submit" value="Add to cart">
+    <input type="submit" value="Checkout">
 </form>

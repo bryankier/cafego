@@ -15,6 +15,10 @@ type IndexPageData struct {
 	Username string
 	Products []Product
 }
+type CartPageData struct {
+	CartItems []CartItem
+	User      User
+}
 
 func productHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
@@ -139,11 +143,49 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
 }
+func cartHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		tmpl, err := template.ParseFiles("./templates/cart.html")
+		if err != nil {
+			log.Fatal(err)
+		}
+		cookies := r.Cookies()
+		var sessionToken string
+		for _, cookie := range cookies {
+			if cookie.Name == "cafego_session" {
+				sessionToken = cookie.Value
+				break
+			}
+		}
+		user := getUserFromSessionToken(sessionToken)
+		cartItems := getCartItemsByUser(user)
+		// Set to nil for now
+		pageData := CartPageData{
+			User:      user,
+			CartItems: cartItems,
+		}
+		tmpl.Execute(w, pageData)
+	} else if r.Method == "POST" { // In a POST block
+		cookies := r.Cookies()
+		var sessionToken string
+		for _, cookie := range cookies {
+			if cookie.Name == "cafego_session" {
+				sessionToken = cookie.Value
+				break
+			}
+		}
+		user := getUserFromSessionToken(sessionToken)
+		// The rest of the function...}
+		checkoutItemsForUser(user)
+		http.Redirect(w, r, "/", http.StatusFound)
+	}
+}
 
 func main() {
 	initDB()
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/product/", productHandler)
 	http.HandleFunc("/login/", loginHandler)
+	http.HandleFunc("/cart/", cartHandler)
 	http.ListenAndServe(":3000", nil)
 }
